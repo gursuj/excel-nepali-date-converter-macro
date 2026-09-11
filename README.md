@@ -51,8 +51,58 @@ reason to trim it.
 
 - `AD_to_BS_Converter.bas` — VBA module for **Microsoft Excel** (Windows/desktop).
   Import via Alt+F11 → File → Import File. Run `ConvertSelectionToBS` on a
-  selection of AD-date cells; result is written to the cell immediately to the
-  right (original AD date is left untouched), forced to Text format.
+  selection of AD-date cells; each selected cell is overwritten **in place**
+  with its BS equivalent, forced to Text format. The original AD date is gone
+  once the macro runs — running a macro clears Excel's undo history, so
+  Ctrl+Z will not bring it back. Keep a copy of the AD dates elsewhere first
+  if you need to preserve them.
+
+## Installing / removing the module (Excel, Windows)
+
+Two ways to reach the VBA editor: the keybind (Alt+F11, works regardless of
+ribbon setup) or the Developer tab (Developer → Visual Basic). The Developer
+tab isn't shown by default — enable it once via File → Options → Customize
+Ribbon → tick "Developer" in the right-hand list → OK.
+
+**Add:**
+1. Open the workbook. Reach the VBA editor via Alt+F11, or Developer →
+   Visual Basic.
+2. File → Import File (menu only — no keybind for this).
+3. Select `AD_to_BS_Converter.bas`.
+4. Save the workbook as a macro-enabled file (`.xlsm`), otherwise the macro
+   won't be there next time you open it.
+
+**Remove:**
+1. In the VBA editor, click the `AD_to_BS_Converter` module in the Project
+   Explorer to select it.
+2. File → Remove AD_to_BS_Converter (there's no right-click "Remove" option
+   for modules in the classic VBA editor, and no keybind — it has to go
+   through the File menu).
+3. Choose "No" if it asks whether to export first (unless you want to keep a
+   copy).
+4. Save the workbook.
+
+**Does it persist?**
+The module is saved inside whatever workbook you imported it into — it's
+part of that file, not a global Excel setting. Close and reopen that same
+workbook and the macro is still there. Open a *different* workbook and it
+won't have the macro unless you import it into that one too.
+
+If you want it available in every workbook without re-importing each time,
+put it in `PERSONAL.XLSB` (Excel's hidden personal macro workbook, created
+via View → Macros → Record Macro → "Store macro in: Personal Macro
+Workbook", or by importing directly into it if it already exists) — that
+file loads automatically every time Excel starts, regardless of which
+workbook you open.
+
+## Running the macro
+
+1. Select the cell(s) containing AD dates.
+2. Run `ConvertSelectionToBS` one of two ways:
+   - Keybind: Alt+F8 → select `ConvertSelectionToBS` from the list → Run.
+   - GUI: Developer → Macros (same Alt+F8 dialog, reached via the ribbon
+     instead) → select `ConvertSelectionToBS` → Run.
+3. A popup reports how many cells were converted vs. skipped.
 
 ## Compatibility notes
 
