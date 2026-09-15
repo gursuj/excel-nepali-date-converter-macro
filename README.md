@@ -51,8 +51,46 @@ reason to trim it.
 
 - `AD_to_BS_Converter.bas` — VBA module for **Microsoft Excel** (Windows/desktop).
   Import via Alt+F11 → File → Import File. Run `ConvertSelectionToBS` on a
-  selection of AD-date cells; result is written to the cell immediately to the
-  right (original AD date is left untouched), forced to Text format.
+  selection of AD-date cells; result **overwrites the selected cell in
+  place**, forced to Text format. Not reversible except via Ctrl+Z (which
+  only survives until your next action) — keep a backup column/copy of the
+  AD dates first if you need to keep both versions.
+
+  **Result summary**: shows a native `MsgBox` (converted count, skipped
+  count, native skipped row numbers) — this works fine in real Excel, unlike
+  ONLYOFFICE. For consistency with the ONLYOFFICE port, the same summary is
+  also written two rows below the selection (not a fixed cell like A1) and
+  selected.
+
+- `AD_to_BS_Converter.onlyoffice.js` — JavaScript port for **ONLYOFFICE Desktop
+  Editors** (tested on Community 9.4.0.129, Linux). Access via **View tab →
+  Macros** (no Developer tab in ONLYOFFICE, unlike Excel), paste the whole
+  file in, select AD-date cells first, run. Same overwrite-in-place behaviour
+  as the VBA version.
+
+  **Result summary**: no native dialog is available or usable here.
+  `alert()`/`window.alert()` has been blocked in ONLYOFFICE macros since
+  v7.1 (confirmed via their community forum). `confirm()` was tried as an
+  alternative and **confirmed not to work** on 9.4.0.129 (tested — no dialog
+  appeared, and it doesn't throw an exception either, so a script can't even
+  detect the failure to fall back automatically). Dropped entirely. Instead,
+  the macro always writes the summary (converted count, skipped count,
+  native skipped row numbers) two rows below your selection — not a fixed
+  cell like A1, to avoid overwriting unrelated data — and selects it.
+  ONLYOFFICE has no reliable "scroll into view" API (known limitation, no
+  fix as of this writing), so that selection may not visibly scroll on
+  screen — check the Name Box if you don't see the highlight move.
+
+  **Two assumptions in this file are unverified against the real app** (the
+  official API docs didn't state them explicitly) — check these first if
+  output looks wrong:
+  1. `GetValue()` on a date-formatted cell returns a numeric Excel-style
+     serial number, not a string or JS Date object. If wrong, every date
+     cell will silently count as "skipped."
+  2. `GetRow()` is 0-based. If wrong, reported row numbers (skipped rows,
+     fallback summary row) will be off by one.
+  Check against the known-good test dates below before trusting it on real
+  data.
 
 ## Compatibility notes
 
@@ -63,10 +101,9 @@ reason to trim it.
   the equivalent if that's ever needed.
 - **OnlyOffice Desktop Editors** (tested environment: Community 9.4.0.129,
   Linux): macros are **JavaScript**, not VBA — accessed via **View tab →
-  Macros** (no Developer tab, unlike Excel). The `.bas` file will not run
-  there as-is; the conversion logic would need porting to OnlyOffice's JS
-  macro API (`Api.GetSelection()`, `Api.Range()`, etc.) if that platform is
-  needed. Not yet done.
+  Macros** (no Developer tab, unlike Excel). Ported: see
+  `AD_to_BS_Converter.onlyoffice.js` above. Not yet run in the actual app —
+  see the two unverified assumptions noted there.
 
 ## Date-format issue (separate from BS conversion)
 
@@ -86,7 +123,9 @@ Two distinct problems, don't conflate them:
 
 ## Known-good test dates (Nepali New Year / Baishakh 1)
 
-Paste AD dates into column A, run the macro, check column B:
+Output now overwrites the cell in place, so test on a throwaway copy of these
+dates (not real data) — paste into a column, run the macro, compare against
+the expected values below:
 
 ```
 2020-04-13   → expect 2077-01-01   (tests the [unverified] flag)
@@ -100,7 +139,8 @@ Paste AD dates into column A, run the macro, check column B:
 ## Status / open items
 
 - [ ] Test macro in real Excel on Windows
-- [ ] Test/port to OnlyOffice's JS macro API if needed on Linux
+- [ ] Test `.onlyoffice.js` in ONLYOFFICE Desktop Editors on Linux — confirm
+      the two unverified API assumptions noted above
 - [ ] Not tested against an independent third-party BS calendar — the test
       dates above are public/well-known reference points, but the macro's
       full-range output (outside those specific dates) hasn't been

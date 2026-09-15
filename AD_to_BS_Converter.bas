@@ -217,30 +217,58 @@ End Function
 
 '=====================================================================
 ' Entry point: select one or more cells containing Gregorian dates,
-' run this macro. Result is written to the cell immediately to the
-' RIGHT of each selected cell (keeps your original AD date intact).
+' run this macro. Result OVERWRITES the selected cell in place (the
+' original AD date is replaced - this is not reversible except via
+' Ctrl+Z, and Undo only survives until the next action). Keep a backup
+' column/copy of the AD dates first if you need to keep both.
 ' Result is forced to Text so Excel doesn't try to reinterpret it.
 '=====================================================================
 Public Sub ConvertSelectionToBS()
     Dim c As Range
-    Dim targetCell As Range
     Dim convertedCount As Long, skippedCount As Long
+    Dim bsText As String
+    Dim skippedRows As String
+    Dim msg As String
+    Dim maxRow As Long
+    Dim statusCell As Range
 
     If TypeName(Selection) <> "Range" Then
         MsgBox "Select one or more cells containing dates first.", vbExclamation
         Exit Sub
     End If
 
+    maxRow = -1
+
     For Each c In Selection.Cells
+        If c.Row > maxRow Then maxRow = c.Row
+
         If IsDate(c.Value) And c.Value <> "" Then
-            Set targetCell = c.Offset(0, 1)
-            targetCell.NumberFormat = "@" ' force text before writing
-            targetCell.Value = BSDateText(CDate(c.Value))
+            bsText = BSDateText(CDate(c.Value))
+            c.NumberFormat = "@" ' force text before writing
+            c.Value = bsText
             convertedCount = convertedCount + 1
         Else
             skippedCount = skippedCount + 1
+            If skippedRows <> "" Then skippedRows = skippedRows & ", "
+            skippedRows = skippedRows & c.Row ' native Excel row number
         End If
     Next c
 
-    MsgBox "Converted: " & convertedCount & vbCrLf & "Skipped (not a date): " & skippedCount, vbInformation
+    msg = "Converted: " & convertedCount & vbCrLf & "Skipped (not a date): " & skippedCount
+    If skippedCount > 0 Then
+        msg = msg & vbCrLf & "Skipped rows: " & skippedRows
+    End If
+
+    ' Same summary also written 2 rows below the selection (matches the
+    ' OnlyOffice port's behavior, since confirm()-style dialogs aren't
+    ' reliable there - kept consistent here even though MsgBox works fine
+    ' in real Excel). Not a fixed cell like A1 - avoids overwriting
+    ' unrelated data elsewhere on the sheet.
+    If maxRow >= 0 Then
+        Set statusCell = Selection.Worksheet.Cells(maxRow + 2, 1)
+        statusCell.Value = Replace(msg, vbCrLf, " | ")
+        statusCell.Select
+    End If
+
+    MsgBox msg, vbInformation
 End Sub
