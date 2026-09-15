@@ -17,13 +17,14 @@
  * that only survives until the next action). Keep a backup column/copy
  * of the AD dates first if you need to keep both.
  *
- * UNVERIFIED ASSUMPTIONS (docs didn't confirm these - check on first run):
- *   1. GetValue() on a date-formatted cell returns a numeric Excel-style
- *      serial (days since 1899-12-30), not a string. If dates come back
- *      wrong/skipped, this is the first thing to check.
- *   2. GetRow()/GetCol() and GetRangeByNumber(row, col) use the same
- *      0-based indexing (inferred from one doc example, not stated
- *      outright). If output lands in the wrong column, check this.
+ * Handles both real Excel-style numeric date serials AND plain text dates
+ * (common for CSV-origin data) in "yyyy-mm-dd" or "D-Mon-YY"/"D-Mon-YYYY"
+ * format (e.g. "3-Apr-26"). Already-converted BS output is recognized and
+ * left alone, so re-running on the same range twice is safe.
+ *
+ * UNVERIFIED ASSUMPTION (docs didn't confirm this - check on first run):
+ *   GetRow() is 0-based (inferred from one doc example, not stated
+ *   outright). If reported row numbers are off by one, check this.
  * Test against the known-good dates in README.md before trusting output.
  */
 (function () {
@@ -184,9 +185,8 @@
     return s;
   }
 
-  // Public-ish: Excel serial number -> formatted "yyyy-mm-dd" BS string, flagged if unverified
-  function bsDateText(excelSerial) {
-    var adUtcDays = excelSerialToUtcDays(excelSerial);
+  // Core: AD UTC-day-count -> formatted "yyyy-mm-dd" BS string, flagged if unverified
+  function bsDateTextFromUtcDays(adUtcDays) {
     var bs = gregorianDaysToBS(adUtcDays);
     if (!bs) {
       return "#OUT OF RANGE (BS " + BS_TABLE_MIN_YEAR + "-" + BS_TABLE_MAX_YEAR + " only)";
@@ -196,24 +196,76 @@
     return text;
   }
 
+  // Excel serial number -> formatted BS string
+  function bsDateText(excelSerial) {
+    return bsDateTextFromUtcDays(excelSerialToUtcDays(excelSerial));
+  }
+
+  // Already-converted BS output, e.g. "2082-12-23" or "2082-12-23 [unverified]"
+  function looksLikeBsOutput(s) {
+    return /^\d{4}-\d{2}-\d{2}/.test(s);
+  }
+
+  var MONTH_NAMES = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+  // Parses common AD date strings a CSV/text-formatted cell might contain:
+  // "yyyy-mm-dd" or "D-Mon-YY"/"D-Mon-YYYY" (e.g. "3-Apr-26", "30 June 2026").
+  // Two-digit years are assumed 2000s (matches this tool's actual date range).
+  // Returns UTC day count, or null if unrecognized.
+  function parseAdStringToUtcDays(raw) {
+    var s = raw.trim();
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      return Math.floor(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)) / 86400000);
+    }
+    m = s.match(/^(\d{1,2})[\s-]+([A-Za-z]{3,})[\s-]+(\d{2,4})$/);
+    if (m) {
+      var monKey = m[2].slice(0, 3).toLowerCase();
+      if (MONTH_NAMES.hasOwnProperty(monKey)) {
+        var yr = parseInt(m[3], 10);
+        if (yr < 100) yr += 2000;
+        return Math.floor(Date.UTC(yr, MONTH_NAMES[monKey], parseInt(m[1], 10)) / 86400000);
+      }
+    }
+    return null;
+  }
+
   // ---- Entry point ----
   var sheet = Api.GetActiveSheet();
   var selection = sheet.GetSelection();
 
   var converted = 0;
   var skipped = 0;
+  var already = 0;
   var skippedRows = [];
-  var maxRow = -1; // lowest selected row seen, 0-based (see assumption #2 below)
+  var sampleSkip = "";
+  var maxRow = -1; // lowest selected row seen, 0-based (see assumption below)
 
   selection.ForEach(function (range) {
     var value = range.GetValue();
-    var row0 = range.GetRow(); // Assumption #2 (unverified): 0-based
+    var row0 = range.GetRow(); // Assumption (unverified): 0-based
     if (row0 > maxRow) maxRow = row0;
 
-    // Assumption #1 (unverified): date cells return a numeric Excel serial.
-    // If this is wrong, dates will show up here as strings and get skipped.
+    var rawText = (typeof value === "string") ? value.trim() : "";
+
+    if (rawText !== "" && looksLikeBsOutput(rawText)) {
+      // Already converted by a previous run - re-running is safe, don't
+      // re-convert or flag it as a problem. This was the root cause of the
+      // "everything skipped" bug: already-BS text was being counted as a
+      // failed conversion instead of being recognized and left alone.
+      already += 1;
+      return;
+    }
+
+    var adUtcDays = null;
     if (typeof value === "number" && value > 0) {
-      var bsText = bsDateText(value);
+      adUtcDays = excelSerialToUtcDays(value);
+    } else if (rawText !== "") {
+      adUtcDays = parseAdStringToUtcDays(rawText);
+    }
+
+    if (adUtcDays !== null) {
+      var bsText = bsDateTextFromUtcDays(adUtcDays);
       range.SetNumberFormat("@"); // force text, same as the VBA version
       range.SetValue(bsText); // overwrites the selected cell in place
       converted += 1;
@@ -222,12 +274,16 @@
       // +1 for the native row number shown in the app (check this against
       // a known skipped row if the numbers look off by one).
       skippedRows.push(row0 + 1);
+      if (sampleSkip === "") {
+        sampleSkip = "e.g. row " + (row0 + 1) + " raw=[" + rawText + "] type=" + typeof value;
+      }
     }
   });
 
-  var msg = "Converted: " + converted + "\nSkipped: " + skipped;
+  var msg = "Converted: " + converted + "\nAlready BS (skipped, safe): " + already + "\nSkipped: " + skipped;
   if (skippedRows.length > 0) {
     msg += "\nSkipped rows: " + skippedRows.join(", ");
+    msg += "\nSample: " + sampleSkip;
   }
 
   // No native message box in ONLYOFFICE macros (alert()/window.alert blocked

@@ -56,11 +56,29 @@ reason to trim it.
   only survives until your next action) — keep a backup column/copy of the
   AD dates first if you need to keep both versions.
 
-  **Result summary**: shows a native `MsgBox` (converted count, skipped
-  count, native skipped row numbers) — this works fine in real Excel, unlike
-  ONLYOFFICE. For consistency with the ONLYOFFICE port, the same summary is
-  also written two rows below the selection (not a fixed cell like A1) and
-  selected.
+  **Result summary**: shows a native `MsgBox` (converted / already-BS /
+  skipped counts, native skipped row numbers, a sample raw value+type for
+  the first genuinely unparseable cell) — this works fine in real Excel,
+  unlike ONLYOFFICE. For consistency with the ONLYOFFICE port, the same
+  summary is also written two rows below the selection (not a fixed cell
+  like A1) and selected.
+
+  **Bug found and fixed (2026-09-16)**: a real dataset (CSV-origin data,
+  `ENROLLED DATE` column) came back as "Converted: 0, Skipped: 273" even
+  though most of column C already showed correctly converted BS dates. Root
+  cause: the macro had been run once successfully, then run again on the
+  same range — and it counted the already-converted `yyyy-mm-dd` text as
+  "not a date" instead of recognizing it, so every cell (converted or not)
+  got flagged as skipped on the second pass. Fixed by:
+  - Recognizing already-BS-formatted text (`yyyy-mm-dd`, optionally
+    `[unverified]`) up front and treating it as "already converted, skip
+    safely" — re-running the macro on the same range twice is now safe.
+  - Falling back to `.Text` (and a trimmed string) if `.Value` doesn't parse
+    as a date, since CSV-origin data can end up as plain text rather than a
+    real date value.
+  - Reporting a sample skipped cell's raw content and type in the summary,
+    so a genuine parse failure is self-diagnosing without needing to
+    reproduce it in Excel directly.
 
 - `AD_to_BS_Converter.onlyoffice.js` — JavaScript port for **ONLYOFFICE Desktop
   Editors** (tested on Community 9.4.0.129, Linux). Access via **View tab →
@@ -74,21 +92,23 @@ reason to trim it.
   alternative and **confirmed not to work** on 9.4.0.129 (tested — no dialog
   appeared, and it doesn't throw an exception either, so a script can't even
   detect the failure to fall back automatically). Dropped entirely. Instead,
-  the macro always writes the summary (converted count, skipped count,
-  native skipped row numbers) two rows below your selection — not a fixed
-  cell like A1, to avoid overwriting unrelated data — and selects it.
-  ONLYOFFICE has no reliable "scroll into view" API (known limitation, no
-  fix as of this writing), so that selection may not visibly scroll on
-  screen — check the Name Box if you don't see the highlight move.
+  the macro always writes the summary (converted / already-BS / skipped
+  counts, native skipped row numbers, a sample raw value+type for the first
+  unparseable cell) two rows below your selection — not a fixed cell like
+  A1, to avoid overwriting unrelated data — and selects it. ONLYOFFICE has
+  no reliable "scroll into view" API (known limitation, no fix as of this
+  writing), so that selection may not visibly scroll on screen — check the
+  Name Box if you don't see the highlight move.
 
-  **Two assumptions in this file are unverified against the real app** (the
-  official API docs didn't state them explicitly) — check these first if
-  output looks wrong:
-  1. `GetValue()` on a date-formatted cell returns a numeric Excel-style
-     serial number, not a string or JS Date object. If wrong, every date
-     cell will silently count as "skipped."
-  2. `GetRow()` is 0-based. If wrong, reported row numbers (skipped rows,
-     fallback summary row) will be off by one.
+  **Handles both real date values and plain text dates** (CSV-origin data,
+  `yyyy-mm-dd`, or `D-Mon-YY`/`D-Mon-YYYY` like `3-Apr-26`) — see the Excel
+  bug entry above; the same root cause applied here since the port
+  originally only handled numeric serials. Already-BS-formatted text is
+  recognized and left alone, so re-running on the same range twice is safe.
+
+  **One assumption in this file is unverified against the real app** (the
+  official API docs didn't state it explicitly) — check this first if
+  reported row numbers look off by one: `GetRow()` is 0-based.
   Check against the known-good test dates below before trusting it on real
   data.
 
@@ -102,8 +122,9 @@ reason to trim it.
 - **OnlyOffice Desktop Editors** (tested environment: Community 9.4.0.129,
   Linux): macros are **JavaScript**, not VBA — accessed via **View tab →
   Macros** (no Developer tab, unlike Excel). Ported: see
-  `AD_to_BS_Converter.onlyoffice.js` above. Not yet run in the actual app —
-  see the two unverified assumptions noted there.
+  `AD_to_BS_Converter.onlyoffice.js` above. `confirm()` confirmed not to
+  work as a dialog (see above); one indexing assumption (`GetRow()` 0-based)
+  still unverified.
 
 ## Date-format issue (separate from BS conversion)
 
@@ -138,9 +159,12 @@ the expected values below:
 
 ## Status / open items
 
-- [ ] Test macro in real Excel on Windows
-- [ ] Test `.onlyoffice.js` in ONLYOFFICE Desktop Editors on Linux — confirm
-      the two unverified API assumptions noted above
+- [x] Test macro in real Excel on Windows — done via real dataset (CSV
+      import), found and fixed the "everything skipped" bug (see above)
+- [ ] Test `.onlyoffice.js` in ONLYOFFICE Desktop Editors — `confirm()`
+      dialog confirmed not to work (fixed, see above); the already-BS /
+      text-date handling fix hasn't been run there yet; one indexing
+      assumption (`GetRow()` 0-based) still unverified
 - [ ] Not tested against an independent third-party BS calendar — the test
       dates above are public/well-known reference points, but the macro's
       full-range output (outside those specific dates) hasn't been

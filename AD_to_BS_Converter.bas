@@ -225,12 +225,15 @@ End Function
 '=====================================================================
 Public Sub ConvertSelectionToBS()
     Dim c As Range
-    Dim convertedCount As Long, skippedCount As Long
+    Dim convertedCount As Long, skippedCount As Long, alreadyCount As Long
     Dim bsText As String
     Dim skippedRows As String
     Dim msg As String
     Dim maxRow As Long
     Dim statusCell As Range
+    Dim rawText As String
+    Dim sampleSkip As String
+    Dim parsed As Boolean
 
     If TypeName(Selection) <> "Range" Then
         MsgBox "Select one or more cells containing dates first.", vbExclamation
@@ -241,22 +244,54 @@ Public Sub ConvertSelectionToBS()
 
     For Each c In Selection.Cells
         If c.Row > maxRow Then maxRow = c.Row
+        rawText = Trim(CStr(c.Value))
 
-        If IsDate(c.Value) And c.Value <> "" Then
-            bsText = BSDateText(CDate(c.Value))
-            c.NumberFormat = "@" ' force text before writing
-            c.Value = bsText
-            convertedCount = convertedCount + 1
-        Else
+        If rawText Like "####-##-##*" Then
+            ' Already BS output from a previous run (yyyy-mm-dd, optionally
+            ' "[unverified]") - re-running the macro is safe, don't
+            ' re-convert or flag it as a problem.
+            alreadyCount = alreadyCount + 1
+        ElseIf rawText = "" Then
             skippedCount = skippedCount + 1
             If skippedRows <> "" Then skippedRows = skippedRows & ", "
-            skippedRows = skippedRows & c.Row ' native Excel row number
+            skippedRows = skippedRows & c.Row
+        Else
+            parsed = False
+            ' Try the underlying value first, then fall back to the
+            ' displayed text (.Text) in case .Value isn't what's expected -
+            ' this was the root cause of the "everything skipped" bug.
+            If IsDate(c.Value) Then
+                bsText = BSDateText(CDate(c.Value))
+                parsed = True
+            ElseIf IsDate(c.Text) Then
+                bsText = BSDateText(CDate(c.Text))
+                parsed = True
+            ElseIf IsDate(rawText) Then
+                bsText = BSDateText(CDate(rawText))
+                parsed = True
+            End If
+
+            If parsed Then
+                c.NumberFormat = "@" ' force text before writing
+                c.Value = bsText
+                convertedCount = convertedCount + 1
+            Else
+                skippedCount = skippedCount + 1
+                If skippedRows <> "" Then skippedRows = skippedRows & ", "
+                skippedRows = skippedRows & c.Row
+                If sampleSkip = "" Then
+                    sampleSkip = "e.g. row " & c.Row & " raw=[" & rawText & "] type=" & TypeName(c.Value)
+                End If
+            End If
         End If
     Next c
 
-    msg = "Converted: " & convertedCount & vbCrLf & "Skipped (not a date): " & skippedCount
+    msg = "Converted: " & convertedCount & vbCrLf & _
+          "Already BS (skipped, safe): " & alreadyCount & vbCrLf & _
+          "Skipped (not a date): " & skippedCount
     If skippedCount > 0 Then
         msg = msg & vbCrLf & "Skipped rows: " & skippedRows
+        msg = msg & vbCrLf & "Sample: " & sampleSkip
     End If
 
     ' Same summary also written 2 rows below the selection (matches the
