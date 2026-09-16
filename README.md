@@ -51,17 +51,20 @@ reason to trim it.
 
 - `AD_to_BS_Converter.bas` — VBA module for **Microsoft Excel** (Windows/desktop).
   Import via Alt+F11 → File → Import File. Run `ConvertSelectionToBS` on a
-  selection of AD-date cells; result **overwrites the selected cell in
-  place**, forced to Text format. Not reversible except via Ctrl+Z (which
-  only survives until your next action) — keep a backup column/copy of the
-  AD dates first if you need to keep both versions.
+  selection of AD-date cells; each selected cell is overwritten **in place**
+  with its BS equivalent, forced to Text format. The original AD date is gone
+  once the macro runs — **running any macro clears Excel's entire undo
+  history**, so Ctrl+Z will not bring it back (confirmed via real testing,
+  not just theory — this is stronger than "not reversible except Ctrl+Z").
+  Keep a copy of the AD dates elsewhere first if you need to preserve them.
 
   **Result summary**: shows a native `MsgBox` (converted / already-BS /
   skipped counts, native skipped row numbers, a sample raw value+type for
   the first genuinely unparseable cell) — this works fine in real Excel,
   unlike ONLYOFFICE. For consistency with the ONLYOFFICE port, the same
   summary is also written two rows below the selection (not a fixed cell
-  like A1) and selected.
+  like A1) and selected. Columns are also auto-fit after conversion so long
+  values (e.g. the `[unverified]` suffix) aren't clipped.
 
   **Bug found and fixed (2026-09-16)**: a real dataset (CSV-origin data,
   `ENROLLED DATE` column) came back as "Converted: 0, Skipped: 273" even
@@ -79,6 +82,56 @@ reason to trim it.
   - Reporting a sample skipped cell's raw content and type in the summary,
     so a genuine parse failure is self-diagnosing without needing to
     reproduce it in Excel directly.
+
+## Installing / removing the module (Excel, Windows)
+
+Two ways to reach the VBA editor: the keybind (Alt+F11, works regardless of
+ribbon setup) or the Developer tab (Developer → Visual Basic). The Developer
+tab isn't shown by default — enable it once via File → Options → Customize
+Ribbon → tick "Developer" in the right-hand list → OK.
+
+**Add:**
+1. Open the workbook. Reach the VBA editor via Alt+F11, or Developer →
+   Visual Basic.
+2. File → Import File (menu only — no keybind for this).
+3. Select `AD_to_BS_Converter.bas`.
+4. Save the workbook as a macro-enabled file (`.xlsm`), otherwise the macro
+   won't be there next time you open it.
+
+**Remove:**
+1. In the VBA editor, click the `AD_to_BS_Converter` module in the Project
+   Explorer to select it.
+2. File → Remove AD_to_BS_Converter (there's no right-click "Remove" option
+   for modules in the classic VBA editor, and no keybind — it has to go
+   through the File menu).
+3. Choose "No" if it asks whether to export first (unless you want to keep a
+   copy).
+4. Save the workbook.
+
+**Does it persist?**
+The module is saved inside whatever workbook you imported it into — it's
+part of that file, not a global Excel setting. Close and reopen that same
+workbook and the macro is still there. Open a *different* workbook and it
+won't have the macro unless you import it into that one too.
+
+If you want it available in every workbook without re-importing each time,
+put it in `PERSONAL.XLSB` (Excel's hidden personal macro workbook, created
+via View → Macros → Record Macro → "Store macro in: Personal Macro
+Workbook", or by importing directly into it if it already exists) — that
+file loads automatically every time Excel starts, regardless of which
+workbook you open.
+
+## Running the macro
+
+1. Select the cell(s) containing AD dates.
+2. Run `ConvertSelectionToBS` one of two ways:
+   - Keybind: Alt+F8 → select `ConvertSelectionToBS` from the list → Run.
+   - GUI: Developer → Macros (same Alt+F8 dialog, reached via the ribbon
+     instead) → select `ConvertSelectionToBS` → Run.
+3. A popup reports converted / already-BS / skipped counts, native skipped
+   row numbers, and (if anything was genuinely unparseable) a sample raw
+   value to help diagnose it. The same summary is also written two rows
+   below your selection and selected.
 
 - `AD_to_BS_Converter.onlyoffice.js` — JavaScript port for **ONLYOFFICE Desktop
   Editors** (tested on Community 9.4.0.129, Linux). Access via **View tab →
@@ -114,8 +167,10 @@ reason to trim it.
 
 ## Compatibility notes
 
-- **Excel (Windows)**: works as-is (standard VBA). Not yet tested — pending
-  Windows access.
+- **Excel (Windows)**: tested against a real dataset — found and fixed both
+  a VBA syntax error (the original giant `Array(...)` table literal exceeded
+  VBA's line-continuation limit; rewritten as one `SetRow` call per year
+  instead) and the false-skip bug documented above.
 - **Excel Online (Microsoft 365 web)**: VBA does not run in the browser editor
   at all. This macro cannot work there. Office Scripts (TypeScript) would be
   the equivalent if that's ever needed.

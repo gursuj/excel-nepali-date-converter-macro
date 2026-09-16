@@ -217,10 +217,11 @@ End Function
 
 '=====================================================================
 ' Entry point: select one or more cells containing Gregorian dates,
-' run this macro. Result OVERWRITES the selected cell in place (the
-' original AD date is replaced - this is not reversible except via
-' Ctrl+Z, and Undo only survives until the next action). Keep a backup
-' column/copy of the AD dates first if you need to keep both.
+' run this macro. Each selected cell is overwritten IN PLACE with its
+' BS equivalent (the original AD date is gone once this runs - running
+' ANY macro clears Excel's entire undo history, so Ctrl+Z will NOT
+' restore it - confirmed via real testing). Keep a copy of the AD dates
+' elsewhere first if you need to preserve them.
 ' Result is forced to Text so Excel doesn't try to reinterpret it.
 '=====================================================================
 Public Sub ConvertSelectionToBS()
@@ -285,6 +286,10 @@ Public Sub ConvertSelectionToBS()
             End If
         End If
     Next c
+
+    ' Widen columns to fit the widest result (e.g. the "[unverified]" suffix),
+    ' otherwise a column sized for a plain date can end up clipping that text.
+    Selection.EntireColumn.AutoFit
 
     msg = "Converted: " & convertedCount & vbCrLf & _
           "Already BS (skipped, safe): " & alreadyCount & vbCrLf & _
